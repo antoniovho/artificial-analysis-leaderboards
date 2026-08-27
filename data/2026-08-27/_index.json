@@ -1,6 +1,6 @@
 {
   "date": "2026-08-27",
-  "fetched_at": "2026-08-27T12:56:35.304697+00:00",
+  "fetched_at": "2026-08-27T13:14:02.221302+00:00",
   "source": "https://artificialanalysis.ai",
   "source_type": "artificial_analysis_api_v2",
   "parser_version": "api-v2-1",
@@ -13,10 +13,25 @@
       "file": "data/2026-08-27/llms.json"
     },
     "text-to-image": {
-      "status": "error",
-      "error": "HTTP 403 from Artificial Analysis API\nURL: https://artificialanalysis.ai/api/v2/media/text-to-image/models?page=1&page_size=200\nResponse: {\"error\":\"Text-to-image models list requires a Pro subscription\"}",
+      "status": "success",
+      "model_count": 155,
       "source_type": "api_v2",
-      "source_url": "https://artificialanalysis.ai/api/v2/media/text-to-image/models"
+      "source_url": "https://artificialanalysis.ai/api/v2/media/text-to-image/models/free",
+      "file": "data/2026-08-27/text-to-image.json"
+    },
+    "text-to-video": {
+      "status": "success",
+      "model_count": 80,
+      "source_type": "api_v2",
+      "source_url": "https://artificialanalysis.ai/api/v2/media/text-to-video/models/free",
+      "file": "data/2026-08-27/text-to-video.json"
+    },
+    "image-to-video": {
+      "status": "success",
+      "model_count": 74,
+      "source_type": "api_v2",
+      "source_url": "https://artificialanalysis.ai/api/v2/media/image-to-video/models/free",
+      "file": "data/2026-08-27/image-to-video.json"
     }
   }
 }
