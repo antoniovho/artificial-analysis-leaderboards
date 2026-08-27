@@ -95,30 +95,33 @@ SOURCES = [
         "slug": "text-to-image",
         "source_type": "api_v2",
         "source_url": (
-            f"{API_BASE_URL}/api/v2/media/text-to-image/models"
+            f"{API_BASE_URL}/api/v2/media/text-to-image/models/free"
         ),
         "description": (
             "Artificial Analysis text-to-image models"
+            "via the Free API"
         ),
     },
     {
         "slug": "text-to-video",
         "source_type": "api_v2",
         "source_url": (
-            f"{API_BASE_URL}/api/v2/media/text-to-video/models"
+            f"{API_BASE_URL}/api/v2/media/text-to-video/models/free"
         ),
         "description": (
             "Artificial Analysis text-to-video models"
+            "via the Free API"
         ),
     },
     {
         "slug": "image-to-video",
         "source_type": "api_v2",
         "source_url": (
-            f"{API_BASE_URL}/api/v2/media/image-to-video/models"
+            f"{API_BASE_URL}/api/v2/media/image-to-video/models/free"
         ),
         "description": (
             "Artificial Analysis image-to-video models"
+            "via the Free API"
         ),
     },
 ]
@@ -1061,19 +1064,22 @@ def main() -> None:
     # Exit status
     # -----------------------------------------------------------------------
 
-    if success_count < total:
-
+    if success_count == 0:
         print(
             "",
             file=sys.stderr,
         )
 
         print(
-            "One or more endpoints failed.",
+            "All endpoints failed.",
             file=sys.stderr,
         )
 
         sys.exit(1)
+
+    print(
+        f"Successfully fetched {success_count}/{total} endpoints."
+    )
 
 
 if __name__ == "__main__":
