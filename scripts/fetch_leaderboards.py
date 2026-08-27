@@ -1,426 +1,1078 @@
 #!/usr/bin/env python3
 """
-Fetch Artificial Analysis leaderboard data from public web surfaces.
-Saves daily snapshots + latest.json pointer.
+Fetch Artificial Analysis model data using the official API v2.
 
-Sources:
-  - /leaderboards/models                                → LLM leaderboard page payload
-  - /api/text-to-image/arena/preferences                → Text-to-image / image editing
-  - /api/text-to-speech/arena/preferences               → Text-to-speech
-  - /api/text-to-video/arena/preferences                → Text-to-video / image-to-video
+Requires:
+    ARTIFICIAL_ANALYSIS_API_KEY
 
-Usage:
-  python3 scripts/fetch_leaderboards.py
-  python3 scripts/fetch_leaderboards.py --only llms text-to-video
+Example:
+    export ARTIFICIAL_ANALYSIS_API_KEY="your-key"
+    python3 scripts/fetch_leaderboards.py
+
+Only specific endpoints:
+    python3 scripts/fetch_leaderboards.py --only llms
+
+Custom delay:
+    python3 scripts/fetch_leaderboards.py --delay 1
+
+Data is saved as:
+
+    data/
+        2026-08-27/
+            _index.json
+            llms.json
+            text-to-image.json
+            text-to-video.json
+            image-to-video.json
+        latest.json
+
+The API key is NEVER written to disk.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import re
+import os
 import sys
 import time
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Iterable
 import urllib.error
+import urllib.parse
 import urllib.request
 
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+API_BASE_URL = "https://artificialanalysis.ai"
+
+API_KEY_ENV = "ARTIFICIAL_ANALYSIS_API_KEY"
+
 USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/135.0.0.0 Safari/537.36"
+    "artificial-analysis-leaderboards/2.0 "
+    "(https://github.com/)"
 )
-PARSER_VERSION = "public-web-v1"
+
+PARSER_VERSION = "api-v2-1"
+
+DEFAULT_DELAY = 1.0
+
+PAGE_SIZE = 200
+
+
+# ---------------------------------------------------------------------------
+# Sources
+# ---------------------------------------------------------------------------
+#
+# IMPORTANT:
+#
+# The language endpoint is the Free API endpoint.
+#
+# Media endpoints may depend on the API tier available to your key.
+# If one of them returns 403/401, remove it from SOURCES or change it
+# according to the endpoints available in your Artificial Analysis account.
+#
+# ---------------------------------------------------------------------------
 
 SOURCES = [
     {
         "slug": "llms",
-        "source_type": "page_payload",
-        "source_url": "https://artificialanalysis.ai/leaderboards/models",
-        "description": "LLM leaderboard page payload",
+        "source_type": "api_v2",
+        "source_url": (
+            f"{API_BASE_URL}/api/v2/language/models/free"
+        ),
+        "description": (
+            "Artificial Analysis language models "
+            "via the Free API"
+        ),
     },
     {
         "slug": "text-to-image",
-        "source_type": "public_json",
-        "source_url": "https://artificialanalysis.ai/api/text-to-image/arena/preferences?supports_image_input=false",
-        "description": "Text-to-image arena leaderboard",
-    },
-    {
-        "slug": "image-editing",
-        "source_type": "public_json",
-        "source_url": "https://artificialanalysis.ai/api/text-to-image/arena/preferences?supports_image_input=true",
-        "description": "Image editing leaderboard via text-to-image public arena endpoint",
-    },
-    {
-        "slug": "text-to-speech",
-        "source_type": "public_json",
-        "source_url": "https://artificialanalysis.ai/api/text-to-speech/arena/preferences",
-        "description": "Text-to-speech arena leaderboard",
+        "source_type": "api_v2",
+        "source_url": (
+            f"{API_BASE_URL}/api/v2/media/text-to-image/models"
+        ),
+        "description": (
+            "Artificial Analysis text-to-image models"
+        ),
     },
     {
         "slug": "text-to-video",
-        "source_type": "public_json",
-        "source_url": "https://artificialanalysis.ai/api/text-to-video/arena/preferences?supports-image-input=false",
-        "description": "Text-to-video arena leaderboard",
+        "source_type": "api_v2",
+        "source_url": (
+            f"{API_BASE_URL}/api/v2/media/text-to-video/models"
+        ),
+        "description": (
+            "Artificial Analysis text-to-video models"
+        ),
     },
     {
         "slug": "image-to-video",
-        "source_type": "public_json",
-        "source_url": "https://artificialanalysis.ai/api/text-to-video/arena/preferences?supports-image-input=true",
-        "description": "Image-to-video leaderboard via text-to-video public arena endpoint",
+        "source_type": "api_v2",
+        "source_url": (
+            f"{API_BASE_URL}/api/v2/media/image-to-video/models"
+        ),
+        "description": (
+            "Artificial Analysis image-to-video models"
+        ),
     },
 ]
 
 
-def http_get(url: str, accept: str = "application/json") -> bytes:
-    req = urllib.request.Request(
-        url,
-        headers={
-            "Accept": accept,
-            "User-Agent": USER_AGENT,
-        },
-    )
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        return resp.read()
+# ---------------------------------------------------------------------------
+# API client
+# ---------------------------------------------------------------------------
 
 
-def fetch_json(url: str) -> dict[str, Any]:
-    return json.loads(http_get(url).decode("utf-8"))
+class ArtificialAnalysisAPIError(RuntimeError):
+    """Raised when Artificial Analysis API returns an error."""
 
 
-def fetch_text(url: str) -> str:
-    return http_get(url, accept="text/html,*/*;q=0.8").decode("utf-8", "ignore")
+class ArtificialAnalysisClient:
+    def __init__(
+        self,
+        api_key: str,
+        user_agent: str = USER_AGENT,
+    ) -> None:
+        if not api_key:
+            raise ValueError("API key cannot be empty")
+
+        self.api_key = api_key
+        self.user_agent = user_agent
+
+    def get(
+        self,
+        url: str,
+    ) -> dict[str, Any]:
+        """
+        Perform authenticated GET request.
+
+        The API key is sent via:
+            x-api-key
+        """
+
+        request = urllib.request.Request(
+            url,
+            method="GET",
+            headers={
+                "Accept": "application/json",
+                "User-Agent": self.user_agent,
+                "x-api-key": self.api_key,
+            },
+        )
+
+        try:
+            with urllib.request.urlopen(
+                request,
+                timeout=60,
+            ) as response:
+
+                body = response.read().decode(
+                    "utf-8",
+                    "ignore",
+                )
+
+                try:
+                    return json.loads(body)
+                except json.JSONDecodeError as exc:
+                    raise ArtificialAnalysisAPIError(
+                        f"Invalid JSON returned by API "
+                        f"for {url}"
+                    ) from exc
+
+        except urllib.error.HTTPError as exc:
+
+            body = exc.read().decode(
+                "utf-8",
+                "ignore",
+            )
+
+            # Never print the API key.
+            safe_url = self._redact_url(url)
+
+            message = (
+                f"HTTP {exc.code} from Artificial Analysis API\n"
+                f"URL: {safe_url}\n"
+                f"Response: {body[:2000]}"
+            )
+
+            raise ArtificialAnalysisAPIError(
+                message
+            ) from exc
+
+        except urllib.error.URLError as exc:
+
+            safe_url = self._redact_url(url)
+
+            raise ArtificialAnalysisAPIError(
+                f"Network error calling {safe_url}: {exc}"
+            ) from exc
+
+    @staticmethod
+    def _redact_url(url: str) -> str:
+        """
+        Remove potential API key-like query parameters.
+
+        Normally the API key is sent through a header, but this
+        makes logging safer if URLs are extended later.
+        """
+
+        try:
+            parsed = urllib.parse.urlparse(url)
+
+            query = urllib.parse.parse_qsl(
+                parsed.query,
+                keep_blank_values=True,
+            )
+
+            safe_query = []
+
+            for key, value in query:
+
+                if key.lower() in {
+                    "api_key",
+                    "apikey",
+                    "key",
+                    "x-api-key",
+                }:
+                    value = "***REDACTED***"
+
+                safe_query.append(
+                    (
+                        urllib.parse.quote(key),
+                        urllib.parse.quote(value),
+                    )
+                )
+
+            query_string = "&".join(
+                f"{key}={value}"
+                for key, value in safe_query
+            )
+
+            return urllib.parse.urlunparse(
+                (
+                    parsed.scheme,
+                    parsed.netloc,
+                    parsed.path,
+                    parsed.params,
+                    query_string,
+                    parsed.fragment,
+                )
+            )
+
+        except Exception:
+            return url
+
+    def get_all_models(
+        self,
+        url: str,
+        page_size: int = PAGE_SIZE,
+        delay: float = DEFAULT_DELAY,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """
+        Fetch all pages from an API v2 endpoint.
+
+        Expected structure:
+
+            {
+                "pagination": {
+                    "page": 1,
+                    "page_size": 200,
+                    "total_pages": 2,
+                    "has_more": true
+                },
+                "data": [...]
+            }
+
+        Returns:
+
+            models
+            pagination metadata
+        """
+
+        all_models: list[dict[str, Any]] = []
+
+        page = 1
+
+        first_payload: dict[str, Any] | None = None
+
+        while True:
+
+            separator = (
+                "&"
+                if "?" in url
+                else "?"
+            )
+
+            page_url = (
+                f"{url}"
+                f"{separator}"
+                f"page={page}"
+                f"&page_size={page_size}"
+            )
+
+            print(
+                f"  Requesting page {page}...",
+                flush=True,
+            )
+
+            payload = self.get(page_url)
+
+            if first_payload is None:
+                first_payload = payload
+
+            data = payload.get("data")
+
+            if data is None:
+                raise ArtificialAnalysisAPIError(
+                    "Unexpected API response: "
+                    f"'data' field is missing from {page_url}"
+                )
+
+            if not isinstance(data, list):
+                raise ArtificialAnalysisAPIError(
+                    "Unexpected API response: "
+                    f"'data' is not a list in {page_url}"
+                )
+
+            for item in data:
+
+                if not isinstance(item, dict):
+                    raise ArtificialAnalysisAPIError(
+                        "Unexpected API response: "
+                        "an item in 'data' is not an object"
+                    )
+
+            all_models.extend(data)
+
+            pagination = payload.get(
+                "pagination",
+                {},
+            )
+
+            if not isinstance(
+                pagination,
+                dict,
+            ):
+                pagination = {}
+
+            has_more = pagination.get(
+                "has_more",
+                False,
+            )
+
+            total_pages = pagination.get(
+                "total_pages"
+            )
+
+            print(
+                f"  Received {len(data)} models "
+                f"(total: {len(all_models)})",
+                flush=True,
+            )
+
+            if not has_more:
+                break
+
+            if total_pages is not None:
+
+                try:
+                    total_pages_int = int(
+                        total_pages
+                    )
+                except (TypeError, ValueError):
+                    total_pages_int = None
+
+                if (
+                    total_pages_int is not None
+                    and page >= total_pages_int
+                ):
+                    break
+
+            page += 1
+
+            if delay > 0:
+                time.sleep(delay)
+
+        pagination_metadata = {}
+
+        if first_payload:
+            pagination_metadata = (
+                first_payload.get(
+                    "pagination",
+                    {},
+                )
+            )
+
+        return (
+            all_models,
+            pagination_metadata,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Utilities
+# ---------------------------------------------------------------------------
 
 
 def clean_value(value: Any) -> Any:
+    """
+    Recursively clean special values returned by some
+    web/API surfaces.
+
+    "$undefined" -> None
+    """
+
     if value == "$undefined":
         return None
+
     if isinstance(value, dict):
-        return {k: clean_value(v) for k, v in value.items()}
+        return {
+            key: clean_value(item)
+            for key, item in value.items()
+        }
+
     if isinstance(value, list):
-        return [clean_value(v) for v in value]
+        return [
+            clean_value(item)
+            for item in value
+        ]
+
     return value
 
 
-def format_ci95(ci_delta: Any) -> str | None:
-    if ci_delta is None:
-        return None
-    if isinstance(ci_delta, float) and ci_delta.is_integer():
-        ci_delta = int(ci_delta)
-    return f"-{ci_delta}/+{ci_delta}"
+def normalize_llm(
+    raw: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Normalize a language model.
 
+    IMPORTANT:
+    We deliberately preserve complete nested objects such as
+    evaluations/pricing/performance.
 
-def iter_nested(obj: Any) -> Iterable[Any]:
-    yield obj
-    if isinstance(obj, dict):
-        for value in obj.values():
-            yield from iter_nested(value)
-    elif isinstance(obj, list):
-        for value in obj:
-            yield from iter_nested(value)
+    This makes the historical dataset more future-proof if
+    Artificial Analysis adds new benchmark fields.
+    """
 
+    raw = clean_value(raw)
 
-def extract_llm_models_from_page(html: str) -> list[dict[str, Any]]:
-    pattern = re.compile(r'self\.__next_f\.push\(\[1,("(?:\\.|[^"\\])*")\]\)</script>')
+    creator = raw.get(
+        "model_creator"
+    ) or {}
 
-    for match in pattern.finditer(html):
-        decoded = json.loads(match.group(1))
-        if '"models":' not in decoded or ':' not in decoded:
-            continue
+    if not isinstance(
+        creator,
+        dict,
+    ):
+        creator = {}
 
-        payload = decoded.split(':', 1)[1]
-        try:
-            obj = json.loads(payload)
-        except json.JSONDecodeError:
-            continue
+    evaluations = raw.get(
+        "evaluations"
+    ) or {}
 
-        for node in iter_nested(obj):
-            if not isinstance(node, dict):
-                continue
-            models = node.get("models")
-            if not isinstance(models, list) or not models:
-                continue
-            if isinstance(models[0], dict) and "modelCreatorId" in models[0]:
-                return clean_value(models)
+    pricing = raw.get(
+        "pricing"
+    ) or {}
 
-    raise RuntimeError("Could not locate detailed llm models payload in page HTML")
+    performance = raw.get(
+        "performance"
+    ) or {}
 
+    parameters = raw.get(
+        "parameters"
+    ) or {}
 
-def pick_primary_elo(raw: dict[str, Any]) -> dict[str, Any]:
-    overall = raw.get("overallElo")
-    if isinstance(overall, dict):
-        return overall
+    modalities = raw.get(
+        "modalities"
+    ) or {}
 
-    for entry in raw.get("elos", []):
-        if not entry.get("tag") and not entry.get("category") and not entry.get("accent"):
-            return entry
+    licensing = raw.get(
+        "licensing"
+    ) or {}
 
-    if raw.get("elos"):
-        return raw["elos"][0]
-
-    return {}
-
-
-def normalize_elo_entry(entry: dict[str, Any]) -> dict[str, Any]:
-    entry = clean_value(entry)
     return {
-        "elo": entry.get("elo"),
-        "appearances": entry.get("appearances"),
-        "wins": entry.get("wins"),
-        "win_rate": entry.get("winRate"),
-        "ci95": format_ci95(entry.get("ciDelta")),
-        "ci_delta": entry.get("ciDelta"),
-        "tag": entry.get("tag"),
-        "category": entry.get("category"),
-        "accent": entry.get("accent"),
+        "id": raw.get("id"),
+        "name": raw.get("name"),
+        "slug": raw.get("slug"),
+        "release_date": raw.get(
+            "release_date"
+        ),
+        "reasoning_model": raw.get(
+            "reasoning_model"
+        ),
+
+        "creator": {
+            "id": creator.get("id"),
+            "name": creator.get("name"),
+            "country": creator.get("country"),
+        },
+
+        "evaluations": evaluations,
+
+        "pricing": pricing,
+
+        "performance": performance,
+
+        "context_window_tokens": raw.get(
+            "context_window_tokens"
+        ),
+
+        "parameters": parameters,
+
+        "modalities": modalities,
+
+        "licensing": licensing,
+
+        "huggingface_url": raw.get(
+            "huggingface_url"
+        ),
+
+        "openrouter_api_id": raw.get(
+            "openrouter_api_id"
+        ),
     }
 
 
-def normalize_media(raw: dict[str, Any], slug: str, default_rank: int | None = None) -> dict[str, Any]:
+def normalize_media(
+    raw: dict[str, Any],
+    endpoint_slug: str,
+    rank: int | None = None,
+) -> dict[str, Any]:
+    """
+    Normalize media model.
+
+    Media schemas may differ from language models.
+
+    We therefore preserve the original API payload in
+    `raw` while also exposing common fields.
+    """
+
     raw = clean_value(raw)
-    primary = pick_primary_elo(raw)
 
     result = {
-        "id": raw["id"],
-        "name": raw["name"],
-        "slug": raw["slug"],
-        "release_date": raw.get("releaseDate"),
-        "creator": raw.get("creator"),
-        "family": raw.get("family"),
-        "elo": primary.get("elo"),
-        "rank": raw.get("overallRank", default_rank),
-        "ci95": format_ci95(primary.get("ciDelta")),
-        "appearances": primary.get("appearances"),
-        "wins": primary.get("wins"),
-        "win_rate": primary.get("winRate"),
-        "open_weights_url": raw.get("openWeightsUrl"),
-        "is_current": raw.get("isCurrent"),
-        "is_scraped": raw.get("isScraped"),
-        "introduced_at": raw.get("introducedAt"),
-        "note": raw.get("note"),
-        "elos": [normalize_elo_entry(entry) for entry in raw.get("elos", [])],
+        "id": raw.get("id"),
+        "name": raw.get("name"),
+        "slug": raw.get("slug"),
+
+        "release_date": raw.get(
+            "release_date",
+            raw.get("releaseDate"),
+        ),
+
+        "creator": raw.get(
+            "creator",
+        ),
+
+        "family": raw.get(
+            "family",
+        ),
+
+        "rank": raw.get(
+            "overall_rank",
+            raw.get(
+                "overallRank",
+                rank,
+            ),
+        ),
+
+        "raw": raw,
     }
-
-    if "isFirstPartyFoundational" in raw:
-        result["is_first_party_foundational"] = raw.get("isFirstPartyFoundational")
-
-    if slug in {"text-to-image", "image-editing"}:
-        result["pricing"] = {"price_per_1k_images": raw.get("pricePer1kImages")}
-    elif slug == "text-to-speech":
-        result["pricing"] = {"price_per_1m_characters": raw.get("pricePer1mCharacters")}
-    else:
-        result["pricing"] = {"price_per_minute": raw.get("pricePerMinute")}
 
     return result
 
 
-def normalize_llm(raw: dict[str, Any]) -> dict[str, Any]:
-    raw = clean_value(raw)
-    return {
-        "id": raw["id"],
-        "name": raw["name"],
-        "short_name": raw.get("shortName"),
-        "slug": raw["slug"],
-        "release_date": raw.get("releaseDate"),
-        "reasoning_model": raw.get("reasoningModel"),
-        "deprecated": raw.get("deprecated"),
-        "creator": {
-            "id": raw.get("modelCreatorId"),
-            "name": raw.get("modelCreatorName"),
-            "slug": raw.get("modelCreatorSlug"),
-            "country": raw.get("modelCreatorCountry"),
-            "color": raw.get("modelCreatorColor"),
-            "logo": raw.get("modelCreatorLogo"),
-        },
-        "evaluations": {
-            "artificial_analysis_intelligence_index": raw.get("intelligenceIndex"),
-            "artificial_analysis_intelligence_index_is_estimated": raw.get("intelligenceIndexIsEstimated"),
-            "artificial_analysis_coding_index": raw.get("codingIndex"),
-            "artificial_analysis_agentic_index": raw.get("agenticIndex"),
-            "tau2_bench": raw.get("tau2"),
-            "terminal_bench_hard": raw.get("terminalbenchHard"),
-            "scicode": raw.get("scicode"),
-            "aa_lcr": raw.get("lcr"),
-            "aa_omniscience": raw.get("omniscience"),
-            "aa_omniscience_accuracy": raw.get("omniscienceAccuracy"),
-            "aa_omniscience_non_hallucination": raw.get("omniscienceNonHallucination"),
-            "ifbench": raw.get("ifbench"),
-            "hle": raw.get("hle"),
-            "gpqa": raw.get("gpqa"),
-            "critpt": raw.get("critpt"),
-            "apex_agents": raw.get("apexAgents"),
-            "gdpval_aa_normalized": raw.get("gdpvalNormalized"),
-            "mmmu_pro": raw.get("mmmuPro"),
-        },
-        "pricing": {
-            "price_1m_blended_3_to_1": raw.get("price1mBlended3To1"),
-            "price_1m_input_tokens": raw.get("price1mInputTokens"),
-            "price_1m_output_tokens": raw.get("price1mOutputTokens"),
-            "intelligence_index_cost_total": raw.get("intelligenceIndexCostTotal"),
-            "intelligence_index_cost_input": raw.get("intelligenceIndexCostInput"),
-            "intelligence_index_cost_output": raw.get("intelligenceIndexCostOutput"),
-            "intelligence_index_cost_reasoning": raw.get("intelligenceIndexCostReasoning"),
-            "intelligence_index_cost_answer": raw.get("intelligenceIndexCostAnswer"),
-            "price_class": raw.get("priceClass"),
-        },
-        "speed": {
-            "output_tokens_per_second": raw.get("medianOutputTokensPerSecond"),
-            "time_to_first_token_seconds": raw.get("medianTimeToFirstTokenSeconds"),
-            "time_to_first_answer_token_seconds": raw.get("medianTimeToFirstAnswerTokenSeconds"),
-            "end_to_end_response_time_seconds": raw.get("medianEndToEndResponseTimeSeconds"),
-            "reasoning_time_seconds": raw.get("medianReasoningTimeSeconds"),
-            "percentile_05_output_tokens_per_second": raw.get("percentile05OutputTokensPerSecond"),
-            "percentile_95_output_tokens_per_second": raw.get("percentile95OutputTokensPerSecond"),
-            "quartile_25_output_tokens_per_second": raw.get("quartile25OutputTokensPerSecond"),
-            "quartile_75_output_tokens_per_second": raw.get("quartile75OutputTokensPerSecond"),
-            "percentile_05_time_to_first_token_seconds": raw.get("percentile05TimeToFirstTokenSeconds"),
-            "percentile_95_time_to_first_token_seconds": raw.get("percentile95TimeToFirstTokenSeconds"),
-            "quartile_25_time_to_first_token_seconds": raw.get("quartile25TimeToFirstTokenSeconds"),
-            "quartile_75_time_to_first_token_seconds": raw.get("quartile75TimeToFirstTokenSeconds"),
-        },
-        "capabilities": {
-            "context_window_tokens": raw.get("contextWindowTokens"),
-            "total_parameters": raw.get("totalParameters"),
-            "active_parameters": raw.get("activeParameters"),
-            "training_tokens_trillions": raw.get("trainingTokensTrillions"),
-            "size_class": raw.get("sizeClass"),
-            "input_modality_text": raw.get("inputModalityText"),
-            "input_modality_image": raw.get("inputModalityImage"),
-            "input_modality_video": raw.get("inputModalityVideo"),
-            "input_modality_speech": raw.get("inputModalitySpeech"),
-            "output_modality_text": raw.get("outputModalityText"),
-            "output_modality_image": raw.get("outputModalityImage"),
-            "output_modality_video": raw.get("outputModalityVideo"),
-            "output_modality_speech": raw.get("outputModalitySpeech"),
-        },
-        "open_weights": {
-            "is_open_weights": raw.get("isOpenWeights"),
-            "commercial_allowed": raw.get("commercialAllowed"),
-            "license_name": raw.get("licenseName"),
-            "license_url": raw.get("licenseUrl"),
-            "huggingface_url": raw.get("huggingfaceUrl"),
-            "openrouter_api_id": raw.get("openrouterApiId"),
-        },
-        "breakdowns": {
-            "multilingual": raw.get("multilingualBreakdown"),
-            "gdpval": raw.get("gdpvalBreakdown"),
-            "omniscience": raw.get("omniscienceBreakdown"),
-            "openness": raw.get("opennessBreakdown"),
-            "eval_token_counts": raw.get("evalTokenCounts"),
-            "intelligence_index_token_counts": raw.get("intelligenceIndexTokenCounts"),
-        },
-    }
+def normalize_model(
+    raw: dict[str, Any],
+    endpoint_slug: str,
+    rank: int | None = None,
+) -> dict[str, Any]:
+
+    if endpoint_slug == "llms":
+        return normalize_llm(raw)
+
+    return normalize_media(
+        raw,
+        endpoint_slug,
+        rank,
+    )
 
 
-def fetch_source(source: dict[str, str]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+# ---------------------------------------------------------------------------
+# Fetch source
+# ---------------------------------------------------------------------------
+
+
+def fetch_source(
+    client: ArtificialAnalysisClient,
+    source: dict[str, str],
+    delay: float,
+) -> tuple[
+    list[dict[str, Any]],
+    dict[str, Any],
+]:
+
     slug = source["slug"]
+
     source_url = source["source_url"]
 
-    if slug == "llms":
-        html = fetch_text(source_url)
-        raw_models = extract_llm_models_from_page(html)
-        models = [normalize_llm(model) for model in raw_models]
-    else:
-        payload = fetch_json(source_url)
-        raw_models = payload.get("models", [])
-        models = [normalize_media(model, slug, default_rank=i) for i, model in enumerate(raw_models, start=1)]
+    print(
+        f"Fetching {slug}...",
+        flush=True,
+    )
+
+    raw_models, pagination = (
+        client.get_all_models(
+            source_url,
+            page_size=PAGE_SIZE,
+            delay=delay,
+        )
+    )
+
+    models = [
+        normalize_model(
+            raw_model,
+            slug,
+            rank=index,
+        )
+        for index, raw_model
+        in enumerate(
+            raw_models,
+            start=1,
+        )
+    ]
 
     meta = {
         "endpoint": slug,
-        "source_type": source["source_type"],
-        "source_url": source_url,
-        "source_description": source["description"],
+        "source_type": source[
+            "source_type"
+        ],
+        "source_url": source[
+            "source_url"
+        ],
+        "source_description": source[
+            "description"
+        ],
         "parser_version": PARSER_VERSION,
         "model_count": len(models),
+        "pagination": pagination,
     }
-    return models, meta
+
+    return (
+        models,
+        meta,
+    )
+
+
+# ---------------------------------------------------------------------------
+# File handling
+# ---------------------------------------------------------------------------
+
+
+def load_json(
+    path: Path,
+) -> dict[str, Any]:
+
+    with open(
+        path,
+        "r",
+        encoding="utf-8",
+    ) as file:
+
+        return json.load(file)
+
+
+def save_json(
+    path: Path,
+    data: Any,
+) -> None:
+
+    path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    with open(
+        path,
+        "w",
+        encoding="utf-8",
+    ) as file:
+
+        json.dump(
+            data,
+            file,
+            indent=2,
+            ensure_ascii=False,
+        )
+
+        file.write("\n")
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Fetch Artificial Analysis leaderboards")
-    parser.add_argument("--only", nargs="*", help="Only fetch these endpoint slugs")
-    parser.add_argument("--delay", type=float, default=2.0, help="Delay between requests in seconds")
+
+    parser = argparse.ArgumentParser(
+        description=(
+            "Fetch Artificial Analysis "
+            "model data using API v2"
+        )
+    )
+
+    parser.add_argument(
+        "--only",
+        nargs="*",
+        help=(
+            "Only fetch specified endpoint slugs. "
+            "Example: --only llms"
+        ),
+    )
+
+    parser.add_argument(
+        "--delay",
+        type=float,
+        default=DEFAULT_DELAY,
+        help=(
+            "Delay between paginated requests "
+            f"(default: {DEFAULT_DELAY})"
+        ),
+    )
+
     args = parser.parse_args()
 
+    # -----------------------------------------------------------------------
+    # API key
+    # -----------------------------------------------------------------------
+
+    api_key = os.environ.get(
+        API_KEY_ENV
+    )
+
+    if not api_key:
+
+        print(
+            "ERROR: Missing API key.",
+            file=sys.stderr,
+        )
+
+        print(
+            f"Set the {API_KEY_ENV} "
+            "environment variable.",
+            file=sys.stderr,
+        )
+
+        print(
+            "",
+            file=sys.stderr,
+        )
+
+        print(
+            "Example:",
+            file=sys.stderr,
+        )
+
+        print(
+            f"  export {API_KEY_ENV}='YOUR_API_KEY'",
+            file=sys.stderr,
+        )
+
+        sys.exit(1)
+
+    # -----------------------------------------------------------------------
+    # Select sources
+    # -----------------------------------------------------------------------
+
     sources = SOURCES
+
     if args.only:
-        wanted = set(args.only)
-        sources = [source for source in SOURCES if source["slug"] in wanted]
+
+        wanted = set(
+            args.only
+        )
+
+        sources = [
+            source
+            for source in SOURCES
+            if source["slug"] in wanted
+        ]
+
         if not sources:
-            print(f"ERROR: No matching endpoints for {args.only}", file=sys.stderr)
+
+            available = ", ".join(
+                source["slug"]
+                for source in SOURCES
+            )
+
+            print(
+                "ERROR: No matching endpoints.",
+                file=sys.stderr,
+            )
+
+            print(
+                f"Available: {available}",
+                file=sys.stderr,
+            )
+
             sys.exit(1)
 
-    script_dir = Path(__file__).resolve().parent
+    # -----------------------------------------------------------------------
+    # Client
+    # -----------------------------------------------------------------------
+
+    client = ArtificialAnalysisClient(
+        api_key=api_key,
+    )
+
+    # -----------------------------------------------------------------------
+    # Dates / directories
+    # -----------------------------------------------------------------------
+
+    script_dir = Path(
+        __file__
+    ).resolve().parent
+
     repo_root = script_dir.parent
-    now = datetime.now(timezone.utc)
-    date_str = now.strftime("%Y-%m-%d")
+
+    now = datetime.now(
+        timezone.utc
+    )
+
+    date_str = now.strftime(
+        "%Y-%m-%d"
+    )
+
     fetched_at = now.isoformat()
 
-    day_dir = repo_root / "data" / date_str
-    day_dir.mkdir(parents=True, exist_ok=True)
+    day_dir = (
+        repo_root
+        / "data"
+        / date_str
+    )
 
-    index_path = day_dir / "_index.json"
-    if index_path.exists() and args.only:
-        with open(index_path, encoding="utf-8") as f:
-            index = json.load(f)
-        index["fetched_at"] = fetched_at
+    day_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    index_path = (
+        day_dir
+        / "_index.json"
+    )
+
+    # -----------------------------------------------------------------------
+    # Existing index
+    # -----------------------------------------------------------------------
+
+    if (
+        index_path.exists()
+        and args.only
+    ):
+
+        index = load_json(
+            index_path
+        )
+
+        index[
+            "fetched_at"
+        ] = fetched_at
+
     else:
+
         index = {
             "date": date_str,
+
             "fetched_at": fetched_at,
-            "source": "https://artificialanalysis.ai",
-            "source_type": "public_web_surfaces",
+
+            "source": API_BASE_URL,
+
+            "source_type": "artificial_analysis_api_v2",
+
             "parser_version": PARSER_VERSION,
+
             "endpoints": {},
         }
 
-    success_count = 0
-    total = len(sources)
+    # -----------------------------------------------------------------------
+    # Fetch
+    # -----------------------------------------------------------------------
 
-    for i, source in enumerate(sources, start=1):
+    success_count = 0
+
+    total = len(
+        sources
+    )
+
+    for index_number, source in enumerate(
+        sources,
+        start=1,
+    ):
+
         slug = source["slug"]
-        print(f"Fetching {slug}...", end=" ", flush=True)
+
         try:
-            models, meta = fetch_source(source)
-            meta["fetched_at"] = fetched_at
+
+            models, meta = fetch_source(
+                client,
+                source,
+                delay=args.delay,
+            )
+
+            meta[
+                "fetched_at"
+            ] = fetched_at
+
             output = {
                 "meta": meta,
                 "models": models,
             }
 
-            out_path = day_dir / f"{slug}.json"
-            with open(out_path, "w", encoding="utf-8") as f:
-                json.dump(output, f, indent=2, ensure_ascii=False)
+            output_path = (
+                day_dir
+                / f"{slug}.json"
+            )
 
-            index["endpoints"][slug] = {
-                "model_count": len(models),
-                "source_type": source["source_type"],
-                "source_url": source["source_url"],
+            save_json(
+                output_path,
+                output,
+            )
+
+            index[
+                "endpoints"
+            ][slug] = {
+                "status": "success",
+
+                "model_count": len(
+                    models
+                ),
+
+                "source_type": source[
+                    "source_type"
+                ],
+
+                "source_url": source[
+                    "source_url"
+                ],
+
+                "file": str(
+                    output_path.relative_to(
+                        repo_root
+                    )
+                ),
             }
+
             success_count += 1
-            print(f"✓ {len(models)} models")
-        except Exception as e:
-            print(f"✗ {e}", file=sys.stderr)
-            index["endpoints"][slug] = {
-                "error": str(e),
-                "source_type": source["source_type"],
-                "source_url": source["source_url"],
+
+            print(
+                f"✓ {slug}: "
+                f"{len(models)} models",
+                flush=True,
+            )
+
+        except Exception as exc:
+
+            print(
+                f"✗ {slug}: {exc}",
+                file=sys.stderr,
+                flush=True,
+            )
+
+            index[
+                "endpoints"
+            ][slug] = {
+                "status": "error",
+
+                "error": str(
+                    exc
+                ),
+
+                "source_type": source[
+                    "source_type"
+                ],
+
+                "source_url": source[
+                    "source_url"
+                ],
             }
 
-        if i < total:
-            time.sleep(args.delay)
+        if index_number < total:
 
-    with open(index_path, "w", encoding="utf-8") as f:
-        json.dump(index, f, indent=2, ensure_ascii=False)
+            if args.delay > 0:
+                time.sleep(
+                    args.delay
+                )
 
-    latest_path = repo_root / "data" / "latest.json"
-    with open(latest_path, "w", encoding="utf-8") as f:
-        json.dump({"date": date_str, "path": f"data/{date_str}"}, f, indent=2)
+    # -----------------------------------------------------------------------
+    # Save index
+    # -----------------------------------------------------------------------
 
-    print(f"\nDone: {success_count}/{total} endpoints, saved to data/{date_str}/")
+    save_json(
+        index_path,
+        index,
+    )
+
+    # -----------------------------------------------------------------------
+    # latest.json
+    # -----------------------------------------------------------------------
+
+    latest_path = (
+        repo_root
+        / "data"
+        / "latest.json"
+    )
+
+    save_json(
+        latest_path,
+        {
+            "date": date_str,
+            "path": f"data/{date_str}",
+        },
+    )
+
+    # -----------------------------------------------------------------------
+    # Summary
+    # -----------------------------------------------------------------------
+
+    print(
+        "",
+        flush=True,
+    )
+
+    print(
+        f"Done: "
+        f"{success_count}/{total} endpoints",
+        flush=True,
+    )
+
+    print(
+        f"Saved to: "
+        f"data/{date_str}/",
+        flush=True,
+    )
+
+    # -----------------------------------------------------------------------
+    # Exit status
+    # -----------------------------------------------------------------------
+
     if success_count < total:
+
+        print(
+            "",
+            file=sys.stderr,
+        )
+
+        print(
+            "One or more endpoints failed.",
+            file=sys.stderr,
+        )
+
         sys.exit(1)
 
 

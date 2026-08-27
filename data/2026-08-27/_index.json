@@ -1,0 +1,22 @@
+{
+  "date": "2026-08-27",
+  "fetched_at": "2026-08-27T12:56:35.304697+00:00",
+  "source": "https://artificialanalysis.ai",
+  "source_type": "artificial_analysis_api_v2",
+  "parser_version": "api-v2-1",
+  "endpoints": {
+    "llms": {
+      "status": "success",
+      "model_count": 621,
+      "source_type": "api_v2",
+      "source_url": "https://artificialanalysis.ai/api/v2/language/models/free",
+      "file": "data/2026-08-27/llms.json"
+    },
+    "text-to-image": {
+      "status": "error",
+      "error": "HTTP 403 from Artificial Analysis API\nURL: https://artificialanalysis.ai/api/v2/media/text-to-image/models?page=1&page_size=200\nResponse: {\"error\":\"Text-to-image models list requires a Pro subscription\"}",
+      "source_type": "api_v2",
+      "source_url": "https://artificialanalysis.ai/api/v2/media/text-to-image/models"
+    }
+  }
+}
