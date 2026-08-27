@@ -19,11 +19,13 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Fetch Artificial Analysis data
+      - name: Install dependencies
+        run: python3 -m pip install -r requirements.txt
+
+      - name: Fetch Artificial Analysis and Arena data
         env:
           ARTIFICIAL_ANALYSIS_API_KEY: ${{ secrets.ARTIFICIAL_ANALYSIS_API_KEY }}
-        run: |
-          python3 scripts/fetch_leaderboards.py
+        run: python3 scripts/fetch_all.py
 
       - name: Commit & push
         run: |
@@ -35,5 +37,4 @@ jobs:
           DATE=$(python3 -c "from datetime import datetime, timezone; print(datetime.now(timezone.utc).strftime('%Y-%m-%d'))")
 
           git diff --cached --quiet || git commit -m "data: ${DATE} daily fetch"
-
           git push

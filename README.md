@@ -1,112 +1,77 @@
 # Artificial Analysis Leaderboards
 
-[![Daily Fetch](https://github.com/antoniovho/artificial-analysis-leaderboards/actions/workflows/fetch.yml/badge.svg)](https://github.com/antoniovho/artificial-analysis-leaderboards/actions/workflows/fetch.yml)
+[![Daily Fetch](https://github.com/antoniovho/artificial-analysis-leaderboards/actions/workflows/fetch.yml/badge.svg?branch=main)](https://github.com/antoniovho/artificial-analysis-leaderboards/actions/workflows/fetch.yml)
 
-Daily snapshots of [Artificial Analysis](https://artificialanalysis.ai/) model and leaderboard data collected through the **Artificial Analysis API v2**.
+Daily snapshots of AI model benchmark and leaderboard data collected from **Artificial Analysis** and **Arena AI**.
 
-The repository is intended to provide a historical, machine-readable dataset of AI model evaluations, rankings, pricing, performance and capabilities.
+The repository is intended to provide a historical, machine-readable dataset that can later be used for model comparisons, monitoring and **model recommendations by use case**.
 
-The data can later be used to build model comparison tools, monitoring systems and **model recommendations by use case**.
+---
+
+## Sources
+
+### Artificial Analysis
+
+The collector uses the official Artificial Analysis API v2 with an API key.
+
+The current Free-tier endpoints include:
+
+```text
+https://artificialanalysis.ai/api/v2/language/models/free
+https://artificialanalysis.ai/api/v2/media/text-to-image/models/free
+https://artificialanalysis.ai/api/v2/media/image-editing/models/free
+https://artificialanalysis.ai/api/v2/media/text-to-video/models/free
+https://artificialanalysis.ai/api/v2/media/image-to-video/models/free
+https://artificialanalysis.ai/api/v2/media/text-to-speech/models/free
+https://artificialanalysis.ai/api/v2/media/speech-to-speech/models/free
+https://artificialanalysis.ai/api/v2/media/speech-to-text/models/free
+https://artificialanalysis.ai/api/v2/media/text-to-video-audio/models/free
+https://artificialanalysis.ai/api/v2/media/image-to-video-audio/models/free
+```
+
+The exact fields returned depend on the API tier and current Artificial Analysis schema.
+
+See the [Artificial Analysis API documentation](https://artificialanalysis.ai/data-api/docs).
+
+### Arena AI
+
+Arena data is imported from the public repository:
+
+[oolong-tea-2026/arena-ai-leaderboards](https://github.com/oolong-tea-2026/arena-ai-leaderboards)
+
+That repository maintains daily structured snapshots of Arena AI leaderboards and exposes a public REST API without authentication. The collector uses that API rather than scraping Arena directly.
+
+Current upstream categories include leaderboards such as:
+
+```text
+text
+code
+vision
+document
+text-to-image
+image-edit
+search
+text-to-video
+image-to-video
+video-edit
+```
+
+The available categories are discovered dynamically from the upstream API, so this repository does not need to hard-code the complete Arena category list.
+
+See the [Arena source repository](https://github.com/oolong-tea-2026/arena-ai-leaderboards).
 
 ---
 
 ## Data
 
-The collector currently retrieves the following Artificial Analysis datasets:
+| Source | Data | Destination |
+|---|---|---|
+| Artificial Analysis | LLM benchmarks, pricing, speed, capabilities and media Arena data available to the API tier | `data/YYYY-MM-DD/*.json` |
+| Arena AI | Text, code, vision, document, image, video, search and other Arena leaderboards | `data/YYYY-MM-DD/arena/*.json` |
 
-| Endpoint | Description | Main data |
-|----------|-------------|-----------|
-| `llms` | Language models | Intelligence Index, Coding Index, Agentic Index, benchmark evaluations, pricing, performance, context window and capabilities |
-| `text-to-image` | Text-to-image Arena | Elo, confidence interval and model metadata |
-| `text-to-video` | Text-to-video Arena | Elo, confidence interval and model metadata |
-| `image-to-video` | Image-to-video Arena | Elo, confidence interval and model metadata |
+Artificial Analysis language-model data may contain Intelligence Index, Coding Index, Agentic Index, benchmark evaluations, pricing, performance, context window, modalities and licensing information.
 
-The exact fields available depend on the Artificial Analysis API tier.
-
-The Free API provides a subset of the data available through the full Pro/API plans.
-
-See the [Artificial Analysis API documentation](https://artificialanalysis.ai/data-api/docs) for the current schema and access levels.
-
----
-
-## API
-
-The collector uses the official Artificial Analysis API v2:
-
-```text
-https://artificialanalysis.ai/api/v2
-```
-
-### Language models
-
-The Free language-model endpoint is:
-
-```text
-/api/v2/language/models/free
-```
-
-### Media models
-
-Free media endpoints use the corresponding `/free` routes, for example:
-
-```text
-https://artificialanalysis.ai/api/v2/media/text-to-image/models/free
-https://artificialanalysis.ai/api/v2/media/text-to-video/models/free
-https://artificialanalysis.ai/api/v2/media/image-to-video/models/free
-```
-
-All requests authenticate using the:
-
-```text
-x-api-key
-```
-
-HTTP header.
-
-See:
-
-- [Artificial Analysis API documentation](https://artificialanalysis.ai/data-api/docs)
-- [Artificial Analysis API reference](https://artificialanalysis.ai/api-reference)
-
----
-
-## Authentication
-
-The API key is **never stored in the repository**.
-
-### Local execution
-
-Set the API key as an environment variable:
-
-```bash
-export ARTIFICIAL_ANALYSIS_API_KEY="YOUR_API_KEY"
-```
-
-Then run:
-
-```bash
-python3 scripts/fetch_leaderboards.py
-```
-
-The script reads the key from:
-
-```text
-ARTIFICIAL_ANALYSIS_API_KEY
-```
-
-### GitHub Actions
-
-Configure the following repository secret:
-
-```text
-ARTIFICIAL_ANALYSIS_API_KEY
-```
-
-The workflow injects the secret into the fetch job as an environment variable.
-
-The secret is not written to disk, committed to Git or included in generated JSON files.
-
-**Never commit your API key to Git.**
+Arena leaderboard entries generally contain fields such as rank, model, vendor, license, score/Elo, confidence interval and votes.
 
 ---
 
@@ -119,7 +84,11 @@ The secret is not written to disk, committed to Git or included in generated JSO
 │       └── fetch.yml
 │
 ├── scripts/
-│   └── fetch_leaderboards.py
+│   ├── fetch_leaderboards.py
+│   ├── fetch_arena.py
+│   └── fetch_all.py
+│
+├── requirements.txt
 │
 └── data/
     ├── latest.json
@@ -128,11 +97,16 @@ The secret is not written to disk, committed to Git or included in generated JSO
     │   ├── _index.json
     │   ├── llms.json
     │   ├── text-to-image.json
+    │   ├── image-editing.json
     │   ├── text-to-video.json
-    │   └── image-to-video.json
-    │
-    ├── 2026-08-28/
-    │   └── ...
+    │   ├── image-to-video.json
+    │   └── arena/
+    │       ├── _index.json
+    │       ├── text.json
+    │       ├── code.json
+    │       ├── vision.json
+    │       ├── document.json
+    │       └── ...
     │
     └── ...
 ```
@@ -141,36 +115,19 @@ The secret is not written to disk, committed to Git or included in generated JSO
 
 ## Daily snapshots
 
-Every successful run creates or updates a directory using the current UTC date:
+Each run writes data under the UTC date on which the collector runs:
 
 ```text
 data/YYYY-MM-DD/
 ```
 
-For example:
-
-```text
-data/2026-08-27/
-```
-
-The snapshot contains one JSON file per configured endpoint.
-
-```text
-data/2026-08-27/
-├── _index.json
-├── llms.json
-├── text-to-image.json
-├── text-to-video.json
-└── image-to-video.json
-```
-
-The repository also contains:
+The repository also maintains:
 
 ```text
 data/latest.json
 ```
 
-This is a lightweight pointer to the latest snapshot.
+which points to the latest local snapshot.
 
 Example:
 
@@ -181,13 +138,21 @@ Example:
 }
 ```
 
-This makes it possible for downstream applications to discover the latest dataset without knowing the date in advance.
+### Arena upstream date
+
+Arena maintains its own `latest.json`. The upstream snapshot date is stored separately in:
+
+```text
+data/YYYY-MM-DD/arena/_index.json
+```
+
+This is important because the upstream Arena snapshot date and the local collection date are not necessarily identical.
 
 ---
 
-## JSON format
+## Artificial Analysis JSON format
 
-Each endpoint file contains metadata and model data.
+Each Artificial Analysis endpoint file contains metadata and a `models` list.
 
 Example:
 
@@ -195,109 +160,63 @@ Example:
 {
   "meta": {
     "endpoint": "llms",
-    "source_type": "api_v2",
+    "source_type": "api_v2_free",
     "source_url": "https://artificialanalysis.ai/api/v2/language/models/free",
     "source_description": "Artificial Analysis language models via the Free API",
-    "parser_version": "api-v2-1",
+    "parser_version": "api-v2-2",
     "model_count": 621,
-    "pagination": {}
+    "pagination": {},
+    "fetched_at": "2026-08-27T05:13:00+00:00"
   },
   "models": []
 }
 ```
 
-### Metadata
-
-The `meta` object contains:
-
-| Field | Description |
-|-------|-------------|
-| `endpoint` | Logical dataset name |
-| `source_type` | Source type used by the collector |
-| `source_url` | Artificial Analysis API endpoint |
-| `source_description` | Human-readable source description |
-| `parser_version` | Version of the collector/parser |
-| `model_count` | Number of models collected |
-| `pagination` | Pagination information returned by the API |
-| `fetched_at` | UTC timestamp when the data was retrieved |
+The collector preserves nested `evaluations`, `pricing` and `performance` objects so new upstream fields can be retained without requiring a hard-coded parser update for every benchmark field.
 
 ---
 
-## Language model data
+## Arena JSON format
 
-The language-model dataset contains a normalized representation of the API response.
+Arena files preserve the upstream leaderboard schema and add collection provenance to `meta`.
 
-A model can contain information such as:
+Example:
 
-```text
-id
-name
-slug
-release_date
-reasoning_model
-
-creator
-    id
-    name
-    country
-
-evaluations
-    artificial_analysis_intelligence_index
-    artificial_analysis_coding_index
-    artificial_analysis_agentic_index
-    ...
-    
-pricing
-    ...
-
-performance
-    ...
-
-context_window_tokens
-
-parameters
-    total
-    active
-
-modalities
-    input
-    output
-
-licensing
-    ...
-
-huggingface_url
-openrouter_api_id
+```json
+{
+  "meta": {
+    "leaderboard": "text",
+    "source_url": "https://arena.ai/leaderboard/text",
+    "fetched_at": "2026-08-26T02:50:08+00:00",
+    "model_count": 50,
+    "collector_fetched_at": "2026-08-27T05:13:00+00:00",
+    "collector_local_snapshot_date": "2026-08-27",
+    "upstream_snapshot_date": "2026-08-26",
+    "source_repository": "oolong-tea-2026/arena-ai-leaderboards",
+    "source_repository_url": "https://github.com/oolong-tea-2026/arena-ai-leaderboards",
+    "source_api_url": "https://api.wulong.dev/arena-ai-leaderboards/v1/leaderboard?name=text"
+  },
+  "models": [
+    {
+      "rank": 1,
+      "model": "...",
+      "vendor": "...",
+      "license": "proprietary",
+      "score": 1500,
+      "ci": 5,
+      "votes": 10000
+    }
+  ]
+}
 ```
-
-The collector deliberately preserves nested evaluation, pricing and performance objects rather than maintaining a hard-coded list of every benchmark field.
-
-This means that when Artificial Analysis adds new fields to an API response, the snapshot can retain them without requiring an immediate parser update.
 
 ---
 
 ## Pagination
 
-The API v2 returns paginated datasets.
+Artificial Analysis API v2 language and media list endpoints may return paginated responses.
 
-For example:
-
-```json
-{
-  "pagination": {
-    "page": 1,
-    "page_size": 200,
-    "total_pages": 4,
-    "has_more": true
-  }
-}
-```
-
-The collector automatically requests all pages until:
-
-```text
-has_more = false
-```
+The collector follows the returned pagination metadata until all pages have been fetched.
 
 For example:
 
@@ -305,278 +224,215 @@ For example:
 page 1 → 200 models
 page 2 → 200 models
 page 3 → 200 models
-page 4 → 21 models
-
-total → 621 models
+page 4 → remaining models
 ```
 
 All pages are combined into a single daily JSON file.
+
+The Arena API returns each leaderboard as a complete leaderboard response, so Arena pagination is handled by the upstream service rather than by this repository.
 
 ---
 
 ## Partial failures
 
-The collector is intentionally designed to tolerate individual endpoint failures.
+The collection process is designed to be resilient to individual endpoint failures.
 
 For example:
 
 ```text
+Artificial Analysis
 ✓ llms: 621 models
 ✗ text-to-image: 403
 ✗ text-to-video: 403
-✓ image-to-video: 42 models
+
+Arena
+✓ text: 50 models
+✓ code: 50 models
+✓ vision: 50 models
+...
 ```
 
-In this situation:
+A collector exits successfully when at least one of its own endpoints succeeds.
 
-- successful endpoint data is saved;
-- failed endpoints are recorded in `_index.json`;
-- `latest.json` is updated;
-- GitHub Actions continues to the commit step.
+The combined `fetch_all.py` workflow exits successfully when **at least one collector produces data**.
 
-The process only exits with an error when **all configured endpoints fail**.
-
-This prevents a temporary API problem or a subscription-specific endpoint restriction from preventing the collection of the remaining datasets.
-
-Failed endpoints are recorded in `_index.json`.
-
----
-
-## Error reporting
-
-The collector reports the actual API response when an endpoint fails.
-
-For example:
+Therefore:
 
 ```text
-HTTP 403 from Artificial Analysis API
-URL: https://artificialanalysis.ai/...
-Response: {"error":"Text-to-image models list requires a Pro subscription"}
+AA partially succeeds + Arena succeeds       → commit
+AA fails completely + Arena succeeds         → commit
+AA succeeds + Arena fails completely         → commit
+AA fails completely + Arena fails completely → workflow fails
 ```
 
-This makes it easier to distinguish between:
-
-- invalid API keys;
-- unavailable endpoints;
-- subscription restrictions;
-- rate limits;
-- malformed requests;
-- network errors;
-- unexpected API changes.
+Failed endpoints are recorded in the corresponding `_index.json` file.
 
 ---
 
-## Local usage
+## Authentication
 
-### Fetch all configured endpoints
+### Artificial Analysis
+
+The Artificial Analysis API key is not stored in Git.
+
+Set it locally with:
+
+```bash
+export ARTIFICIAL_ANALYSIS_API_KEY="YOUR_API_KEY"
+```
+
+Then run:
 
 ```bash
 python3 scripts/fetch_leaderboards.py
 ```
 
-### Fetch only LLMs
+### GitHub Actions
 
-```bash
-python3 scripts/fetch_leaderboards.py --only llms
+Configure this repository secret:
+
+```text
+ARTIFICIAL_ANALYSIS_API_KEY
 ```
 
-### Fetch multiple endpoints
+The workflow injects it as an environment variable.
+
+Never commit the API key to the repository.
+
+### Arena
+
+No API key is required for the public Arena snapshot API used by this collector.
+
+---
+
+## Local usage
+
+Install dependencies:
+
+```bash
+python3 -m pip install -r requirements.txt
+```
+
+Run all collectors:
+
+```bash
+python3 scripts/fetch_all.py
+```
+
+Run only Artificial Analysis:
+
+```bash
+python3 scripts/fetch_leaderboards.py
+```
+
+Run only Arena:
+
+```bash
+python3 scripts/fetch_arena.py
+```
+
+Fetch specific Artificial Analysis endpoints:
 
 ```bash
 python3 scripts/fetch_leaderboards.py --only llms text-to-image
 ```
 
-### Change request delay
+Fetch specific Arena leaderboards:
 
 ```bash
-python3 scripts/fetch_leaderboards.py --delay 1
+python3 scripts/fetch_arena.py --only text code vision
 ```
-
-The delay is applied between paginated requests and between configured endpoints.
 
 ---
 
 ## GitHub Actions
 
-The data is collected automatically using GitHub Actions.
-
-The scheduled workflow runs daily at:
+The repository is updated automatically every day at:
 
 ```text
 05:13 UTC
 ```
 
-The workflow is also configured with `workflow_dispatch`, which allows a manual run from the GitHub Actions interface.
+The workflow also supports manual execution through `workflow_dispatch`.
 
-### Workflow process
+The workflow:
 
-Each run performs the following steps:
+1. checks out the repository;
+2. installs Python dependencies;
+3. fetches Artificial Analysis and Arena data;
+4. writes the daily snapshot;
+5. updates `data/latest.json`;
+6. commits the generated data;
+7. pushes the commit to `main`.
 
-```text
-GitHub Actions
-      │
-      ▼
-Checkout repository
-      │
-      ▼
-Setup Python 3.12
-      │
-      ▼
-Load ARTIFICIAL_ANALYSIS_API_KEY
-      │
-      ▼
-Fetch API data
-      │
-      ▼
-Normalize response
-      │
-      ▼
-Save data/YYYY-MM-DD/
-      │
-      ▼
-Update data/latest.json
-      │
-      ▼
-git add data/
-      │
-      ▼
-Commit changes
-      │
-      ▼
-Push to main
-```
-
-The workflow therefore turns the repository itself into a continuously updated historical dataset.
-
----
-
-## Historical data
-
-Because every daily snapshot is committed to Git, the repository automatically provides historical data.
-
-This makes it possible to answer questions such as:
-
-- Which models were available on a particular date?
-- How did a model's benchmark scores change?
-- When did a new model first appear?
-- How quickly did a model move through a leaderboard?
-- Which models disappeared or became deprecated?
-- How have model prices changed over time?
-
-Git history can be used alongside the JSON snapshots for change analysis.
+The workflow succeeds only when at least one collector produces data.
 
 ---
 
 ## Quick access
 
-### Latest snapshot pointer
+### Latest local snapshot
 
 ```bash
 curl -s \
-  https://raw.githubusercontent.com/oolong-tea-2026/artificial-analysis-leaderboards/main/data/latest.json
+  https://raw.githubusercontent.com/antoniovho/artificial-analysis-leaderboards/main/data/latest.json
 ```
 
 ### Latest LLM snapshot
 
-Replace `YYYY-MM-DD` with the date returned by `latest.json`:
+```bash
+curl -s \
+  https://raw.githubusercontent.com/antoniovho/artificial-analysis-leaderboards/main/data/YYYY-MM-DD/llms.json
+```
+
+### Latest Arena text leaderboard
 
 ```bash
 curl -s \
-  https://raw.githubusercontent.com/oolong-tea-2026/artificial-analysis-leaderboards/main/data/YYYY-MM-DD/llms.json
+  https://raw.githubusercontent.com/antoniovho/artificial-analysis-leaderboards/main/data/YYYY-MM-DD/arena/text.json
 ```
 
-### Latest text-to-image snapshot
+### Browse all collected data
 
-```bash
-curl -s \
-  https://raw.githubusercontent.com/oolong-tea-2026/artificial-analysis-leaderboards/main/data/YYYY-MM-DD/text-to-image.json
-```
-
-### Latest text-to-video snapshot
-
-```bash
-curl -s \
-  https://raw.githubusercontent.com/oolong-tea-2026/artificial-analysis-leaderboards/main/data/YYYY-MM-DD/text-to-video.json
-```
-
-### Browse the dataset
-
-[Browse `data/` on GitHub](https://github.com/oolong-tea-2026/artificial-analysis-leaderboards/tree/main/data)
+[Browse `data/`](https://github.com/antoniovho/artificial-analysis-leaderboards/tree/main/data)
 
 ---
 
-## Example: loading the dataset in Python
+## Example: consuming the latest data
 
 ```python
 import json
 import urllib.request
 
-LATEST_URL = (
+BASE = (
     "https://raw.githubusercontent.com/"
-    "oolong-tea-2026/"
-    "artificial-analysis-leaderboards/"
-    "main/data/latest.json"
+    "antoniovho/artificial-analysis-leaderboards/main/data/"
 )
 
-with urllib.request.urlopen(LATEST_URL) as response:
+with urllib.request.urlopen(BASE + "latest.json") as response:
     latest = json.load(response)
 
 date = latest["date"]
 
-llms_url = (
-    "https://raw.githubusercontent.com/"
-    "oolong-tea-2026/"
-    "artificial-analysis-leaderboards/"
-    f"main/data/{date}/llms.json"
-)
+with urllib.request.urlopen(BASE + f"{date}/llms.json") as response:
+    llms = json.load(response)
 
-with urllib.request.urlopen(llms_url) as response:
-    data = json.load(response)
-
-print("Snapshot date:", date)
-print("Models:", len(data["models"]))
-
-for model in data["models"][:10]:
-    print(model["name"])
+print("Snapshot:", date)
+print("LLMs:", len(llms["models"]))
 ```
-
----
-
-## Why this repository exists
-
-Artificial Analysis provides a valuable collection of model evaluations, leaderboards and performance measurements.
-
-This repository adds a simple but useful layer:
-
-```text
-Artificial Analysis API
-        │
-        ▼
-Daily snapshots
-        │
-        ▼
-Historical machine-readable dataset
-        │
-        ▼
-Downstream analysis
-```
-
-The goal is **not** to reproduce the Artificial Analysis website.
-
-The goal is to maintain a continuously updated data layer that can be consumed by other applications.
 
 ---
 
 ## Future scope
 
-The current repository focuses on collecting Artificial Analysis data.
+This repository is primarily a **data ingestion and historical snapshot layer**.
 
-A future recommendation layer can combine this dataset with independent benchmarks and leaderboards, for example:
+A future recommendation layer can normalize models across multiple independent sources:
 
 ```text
 Artificial Analysis
         +
-Chatbot Arena
+Arena AI
         +
 MTEB
         +
@@ -592,7 +448,7 @@ Other specialist benchmarks
    Model normalization
         │
         ▼
-    Use-case scoring
+     Use-case scoring
         │
         ▼
    Top 3 recommendations
@@ -616,35 +472,27 @@ Video generation
 Speech
 ```
 
-The long-term objective is to answer questions such as:
+The long-term objective is to answer:
 
-```text
-"What are the best 3 models for this particular task?"
-```
+> **What are the three best models for this particular task?**
 
-rather than simply:
-
-```text
-"What is the #1 model overall?"
-```
-
-This distinction is important because the best model for one workload may not be the best model for another when quality, cost, latency, context, modalities and specialized benchmark performance are taken into account.
+rather than only asking which model has the highest overall score.
 
 ---
 
 ## Attribution
 
+### Artificial Analysis
+
 Data is provided by [Artificial Analysis](https://artificialanalysis.ai/).
 
-Please provide visible attribution to Artificial Analysis when displaying or reusing the data, according to the applicable API terms.
+Attribution is required when using data from the Artificial Analysis Free API. See the [Artificial Analysis API documentation](https://artificialanalysis.ai/data-api/docs) and applicable terms.
 
-Useful references:
+### Arena AI
 
-- [Artificial Analysis](https://artificialanalysis.ai/)
-- [Artificial Analysis API documentation](https://artificialanalysis.ai/data-api/docs)
-- [Artificial Analysis API reference](https://artificialanalysis.ai/api-reference)
-- [Artificial Analysis methodology](https://artificialanalysis.ai/methodology)
-- [Artificial Analysis Terms of Use](https://artificialanalysis.ai/terms)
+Arena data is sourced through the public [oolong-tea-2026/arena-ai-leaderboards](https://github.com/oolong-tea-2026/arena-ai-leaderboards) repository, which states that its source code is MIT licensed and its data is sourced from Arena AI.
+
+The collector preserves upstream source and repository information in each Arena snapshot for traceability.
 
 ---
 
@@ -652,18 +500,16 @@ Useful references:
 
 The source code in this repository is licensed under the **MIT License**.
 
-The data collected from Artificial Analysis is third-party data and remains subject to the applicable Artificial Analysis API terms, licenses and usage restrictions.
+Third-party data remains subject to the licensing and usage terms of its respective providers and source repositories.
 
-The MIT license applies to the repository's source code and does not grant additional rights to third-party data.
+The MIT license for this repository does not grant additional rights over Artificial Analysis or Arena data.
 
 ---
 
 ## Disclaimer
 
-This repository is an independent data-collection project.
+This is an independent data-collection project and is not affiliated with, sponsored by or endorsed by Artificial Analysis or Arena AI unless explicitly stated otherwise.
 
-It is not affiliated with, sponsored by or endorsed by Artificial Analysis unless explicitly stated otherwise.
+Upstream endpoints, schemas, rate limits, subscription requirements and data terms may change over time.
 
-API availability, endpoint names, schemas, rate limits, subscription requirements and data licensing may change over time.
-
-The collector is therefore versioned and designed to fail explicitly when the upstream API changes rather than silently treating unexpected responses as valid data.
+The collectors are therefore designed to fail explicitly on unexpected responses rather than silently treating invalid data as a successful snapshot.
