@@ -1,6 +1,6 @@
 # Artificial Analysis Leaderboards
 
-[![Daily Fetch](https://github.com/oolong-tea-2026/artificial-analysis-leaderboards/actions/workflows/fetch.yml/badge.svg)](https://github.com/oolong-tea-2026/artificial-analysis-leaderboards/actions/workflows/fetch.yml)
+[![Daily Fetch](https://github.com/antoniovho/artificial-analysis-leaderboards/actions/workflows/fetch.yml/badge.svg)](https://github.com/antoniovho/artificial-analysis-leaderboards/actions/workflows/fetch.yml)
 
 Daily snapshots of [Artificial Analysis](https://artificialanalysis.ai/) model and leaderboard data collected through the **Artificial Analysis API v2**.
 
