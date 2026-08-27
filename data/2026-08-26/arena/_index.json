@@ -1,0 +1,94 @@
+{
+  "source_repository": "oolong-tea-2026/arena-ai-leaderboards",
+  "source_repository_url": "https://github.com/oolong-tea-2026/arena-ai-leaderboards",
+  "source_snapshot_date": "2026-08-26",
+  "source_snapshot_path": "data/2026-08-26",
+  "collector_date": "2026-08-27",
+  "fetched_at": "2026-08-27T15:25:06.215583+00:00",
+  "parser_version": "arena-github-v2",
+  "available_leaderboards": [
+    "agent",
+    "code",
+    "document",
+    "image-edit",
+    "image-to-video",
+    "search",
+    "text",
+    "text-to-image",
+    "text-to-video",
+    "video-edit",
+    "vision"
+  ],
+  "requested_leaderboards": [
+    "agent",
+    "code",
+    "document",
+    "image-edit",
+    "image-to-video",
+    "search",
+    "text",
+    "text-to-image",
+    "text-to-video",
+    "video-edit",
+    "vision"
+  ],
+  "successful_count": 11,
+  "failed_count": 0,
+  "endpoints": {
+    "agent": {
+      "status": "success",
+      "model_count": 10,
+      "file": "data/2026-08-26/arena/agent.json"
+    },
+    "code": {
+      "status": "success",
+      "model_count": 50,
+      "file": "data/2026-08-26/arena/code.json"
+    },
+    "document": {
+      "status": "success",
+      "model_count": 39,
+      "file": "data/2026-08-26/arena/document.json"
+    },
+    "image-edit": {
+      "status": "success",
+      "model_count": 53,
+      "file": "data/2026-08-26/arena/image-edit.json"
+    },
+    "image-to-video": {
+      "status": "success",
+      "model_count": 45,
+      "file": "data/2026-08-26/arena/image-to-video.json"
+    },
+    "search": {
+      "status": "success",
+      "model_count": 34,
+      "file": "data/2026-08-26/arena/search.json"
+    },
+    "text": {
+      "status": "success",
+      "model_count": 50,
+      "file": "data/2026-08-26/arena/text.json"
+    },
+    "text-to-image": {
+      "status": "success",
+      "model_count": 76,
+      "file": "data/2026-08-26/arena/text-to-image.json"
+    },
+    "text-to-video": {
+      "status": "success",
+      "model_count": 45,
+      "file": "data/2026-08-26/arena/text-to-video.json"
+    },
+    "video-edit": {
+      "status": "success",
+      "model_count": 9,
+      "file": "data/2026-08-26/arena/video-edit.json"
+    },
+    "vision": {
+      "status": "success",
+      "model_count": 50,
+      "file": "data/2026-08-26/arena/vision.json"
+    }
+  }
+}
