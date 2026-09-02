@@ -3,8 +3,8 @@
   "source_repository_url": "https://github.com/oolong-tea-2026/arena-ai-leaderboards",
   "source_snapshot_date": "2026-09-01",
   "source_snapshot_path": "data/2026-09-01",
-  "collector_date": "2026-09-01",
-  "fetched_at": "2026-09-01T10:02:24.135273+00:00",
+  "collector_date": "2026-09-02",
+  "fetched_at": "2026-09-02T09:33:45.534817+00:00",
   "parser_version": "arena-github-v2",
   "available_leaderboards": [
     "agent",
