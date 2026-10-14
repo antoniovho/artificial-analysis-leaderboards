@@ -1,0 +1,79 @@
+{
+  "date": "2026-10-14",
+  "fetched_at": "2026-10-14T10:07:29.073042+00:00",
+  "source": "https://artificialanalysis.ai",
+  "source_type": "artificial_analysis_api_v2",
+  "parser_version": "api-v2-2",
+  "endpoints": {
+    "llms": {
+      "status": "success",
+      "model_count": 700,
+      "source_type": "api_v2_free",
+      "source_url": "https://artificialanalysis.ai/api/v2/language/models/free",
+      "file": "data/2026-10-14/llms.json"
+    },
+    "text-to-image": {
+      "status": "success",
+      "model_count": 102,
+      "source_type": "api_v2_free",
+      "source_url": "https://artificialanalysis.ai/api/v2/media/text-to-image/models/free",
+      "file": "data/2026-10-14/text-to-image.json"
+    },
+    "image-editing": {
+      "status": "success",
+      "model_count": 69,
+      "source_type": "api_v2_free",
+      "source_url": "https://artificialanalysis.ai/api/v2/media/image-editing/models/free",
+      "file": "data/2026-10-14/image-editing.json"
+    },
+    "text-to-video": {
+      "status": "success",
+      "model_count": 32,
+      "source_type": "api_v2_free",
+      "source_url": "https://artificialanalysis.ai/api/v2/media/text-to-video/models/free",
+      "file": "data/2026-10-14/text-to-video.json"
+    },
+    "image-to-video": {
+      "status": "success",
+      "model_count": 77,
+      "source_type": "api_v2_free",
+      "source_url": "https://artificialanalysis.ai/api/v2/media/image-to-video/models/free",
+      "file": "data/2026-10-14/image-to-video.json"
+    },
+    "text-to-speech": {
+      "status": "success",
+      "model_count": 97,
+      "source_type": "api_v2_free",
+      "source_url": "https://artificialanalysis.ai/api/v2/media/text-to-speech/models/free",
+      "file": "data/2026-10-14/text-to-speech.json"
+    },
+    "speech-to-speech": {
+      "status": "success",
+      "model_count": 44,
+      "source_type": "api_v2_free",
+      "source_url": "https://artificialanalysis.ai/api/v2/media/speech-to-speech/models/free",
+      "file": "data/2026-10-14/speech-to-speech.json"
+    },
+    "speech-to-text": {
+      "status": "success",
+      "model_count": 72,
+      "source_type": "api_v2_free",
+      "source_url": "https://artificialanalysis.ai/api/v2/media/speech-to-text/models/free",
+      "file": "data/2026-10-14/speech-to-text.json"
+    },
+    "text-to-video-audio": {
+      "status": "success",
+      "model_count": 29,
+      "source_type": "api_v2_free",
+      "source_url": "https://artificialanalysis.ai/api/v2/media/text-to-video-audio/models/free",
+      "file": "data/2026-10-14/text-to-video-audio.json"
+    },
+    "image-to-video-audio": {
+      "status": "success",
+      "model_count": 24,
+      "source_type": "api_v2_free",
+      "source_url": "https://artificialanalysis.ai/api/v2/media/image-to-video-audio/models/free",
+      "file": "data/2026-10-14/image-to-video-audio.json"
+    }
+  }
+}
